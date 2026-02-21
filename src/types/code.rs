@@ -47,10 +47,16 @@ pub struct CodeInsight {
 pub struct InterfaceInfo {
     pub name: String,
     pub interface_type: String, // "function", "method", "class", "trait", etc.
+    #[serde(default = "default_visibility")]
     pub visibility: String,     // "public", "private", "protected"
+    #[serde(default)]
     pub parameters: Vec<ParameterInfo>,
     pub return_type: Option<String>,
     pub description: Option<String>,
+}
+
+fn default_visibility() -> String {
+    "public".to_string()
 }
 
 /// Parameter information
