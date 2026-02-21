@@ -72,10 +72,11 @@ where
         );
 
         prompt.push_str("Requirements:\n");
-        prompt.push_str("1. Return pure JSON object, do not add any extra text\n");
-        prompt.push_str("2. All required fields must be present\n");
-        prompt.push_str("3. Field types must match schema exactly\n");
-        prompt.push_str("4. Arrays and nested objects must be correctly formatted\n\n");
+        prompt.push_str("1. Return a pure JSON object with the DATA, not the schema definition itself\n");
+        prompt.push_str("2. Do NOT include $schema, $defs, title, or type:object wrapper - return the data directly\n");
+        prompt.push_str("3. All required fields must be present at the top level\n");
+        prompt.push_str("4. Field types must match schema exactly\n");
+        prompt.push_str("5. Arrays and nested objects must be correctly formatted\n\n");
 
         if let Some(error) = previous_error {
             prompt.push_str(&format!(
@@ -95,9 +96,13 @@ where
             .await
             .context("Failed to get response from Ollama")?;
 
-        let parsed = self
+        let mut parsed = self
             .parse_json_response(&response, attempt)
             .context("Failed to parse JSON from Ollama response")?;
+
+        // Unwrap JSON Schema wrapper if present (Ollama 7B-8B models often
+        // wrap their response in a JSON Schema structure with $schema/properties/required)
+        parsed = Self::unwrap_schema_wrapper(parsed);
 
         self.validate_json(&parsed)?;
 
@@ -196,5 +201,29 @@ where
             anyhow::bail!("Expected JSON object, got: {}", json);
         }
         Ok(())
+    }
+
+    /// Unwrap JSON Schema wrapper if present.
+    ///
+    /// Ollama 7B-8B models sometimes return responses wrapped in a JSON Schema
+    /// structure (with "$schema", "properties", "required", "type": "object")
+    /// instead of a flat JSON object. This extracts the actual data from the
+    /// "properties" field when the wrapper pattern is detected.
+    fn unwrap_schema_wrapper(json: Value) -> Value {
+        if let Some(obj) = json.as_object() {
+            let has_schema = obj.contains_key("$schema") || obj.contains_key("$defs");
+            let has_properties = obj.contains_key("properties");
+            let has_required = obj.contains_key("required");
+            let has_type_object = obj.get("type").and_then(|v| v.as_str()) == Some("object");
+
+            if (has_schema || (has_required && has_type_object)) && has_properties {
+                if let Some(properties) = obj.get("properties") {
+                    if properties.is_object() {
+                        return properties.clone();
+                    }
+                }
+            }
+        }
+        json
     }
 }
