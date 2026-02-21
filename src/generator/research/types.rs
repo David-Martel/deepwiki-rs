@@ -1,8 +1,84 @@
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::{de::Deserializer, Deserialize, Serialize};
 use std::fmt::Display;
 
 use crate::i18n::TargetLanguage;
+
+/// Deserializes a `String` that also accepts integers, booleans, arrays, or objects.
+/// Ollama models sometimes return `0` or `["a","b"]` where a single `String` is expected.
+fn deserialize_string_or_array<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let val = serde_json::Value::deserialize(deserializer)?;
+    match val {
+        serde_json::Value::String(s) => Ok(s),
+        serde_json::Value::Array(arr) => {
+            let parts: Vec<String> = arr
+                .into_iter()
+                .filter_map(|v| match v {
+                    serde_json::Value::String(s) => Some(s),
+                    serde_json::Value::Object(map) => {
+                        map.get("name").and_then(|n| n.as_str()).map(String::from)
+                    }
+                    _ => Some(v.to_string()),
+                })
+                .collect();
+            Ok(parts.join(", "))
+        }
+        serde_json::Value::Object(map) => {
+            if let Some(name) = map.get("name").and_then(|n| n.as_str()) {
+                Ok(name.to_string())
+            } else {
+                Ok(serde_json::Value::Object(map).to_string())
+            }
+        }
+        serde_json::Value::Null => Ok(String::new()),
+        other => Ok(other.to_string()),
+    }
+}
+
+/// Optional variant: returns `None` for null/empty, `Some(String)` otherwise.
+fn deserialize_optional_string_or_array<'de, D>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let val = serde_json::Value::deserialize(deserializer)?;
+    match val {
+        serde_json::Value::Null => Ok(None),
+        serde_json::Value::String(s) if s.is_empty() => Ok(None),
+        serde_json::Value::Array(ref arr) if arr.is_empty() => Ok(None),
+        _ => {
+            let s = match val {
+                serde_json::Value::String(s) => s,
+                serde_json::Value::Array(arr) => {
+                    let parts: Vec<String> = arr
+                        .into_iter()
+                        .filter_map(|v| match v {
+                            serde_json::Value::String(s) => Some(s),
+                            serde_json::Value::Object(map) => {
+                                map.get("name").and_then(|n| n.as_str()).map(String::from)
+                            }
+                            _ => Some(v.to_string()),
+                        })
+                        .collect();
+                    parts.join(", ")
+                }
+                serde_json::Value::Object(map) => {
+                    if let Some(name) = map.get("name").and_then(|n| n.as_str()) {
+                        name.to_string()
+                    } else {
+                        serde_json::Value::Object(map).to_string()
+                    }
+                }
+                other => other.to_string(),
+            };
+            Ok(Some(s))
+        }
+    }
+}
 
 /// Agent type enumeration
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -257,20 +333,31 @@ pub struct CLIBoundary {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CLIArgument {
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub name: String,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub description: String,
+    #[serde(default)]
     pub required: bool,
+    #[serde(default, deserialize_with = "deserialize_optional_string_or_array")]
     pub default_value: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub value_type: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CLIOption {
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub name: String,
+    #[serde(default, deserialize_with = "deserialize_optional_string_or_array")]
     pub short_name: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub description: String,
+    #[serde(default)]
     pub required: bool,
+    #[serde(default, deserialize_with = "deserialize_optional_string_or_array")]
     pub default_value: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub value_type: String,
 }
 
@@ -352,13 +439,13 @@ pub struct DatabaseOverviewReport {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DatabaseProject {
     /// Project name (from .sqlproj)
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub name: String,
     /// Project file path
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub project_path: String,
     /// Target database platform (SQL Server, etc.)
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_optional_string_or_array")]
     pub target_platform: Option<String>,
     /// Number of tables
     #[serde(default)]
@@ -380,10 +467,10 @@ pub struct DatabaseProject {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DatabaseTable {
     /// Schema name (e.g., dbo)
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub schema: String,
     /// Table name
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub name: String,
     /// Column definitions
     #[serde(default)]
@@ -392,20 +479,20 @@ pub struct DatabaseTable {
     #[serde(default)]
     pub primary_key: Vec<String>,
     /// Description/purpose of the table
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub description: String,
     /// Source file path
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub source_path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct TableColumn {
     /// Column name
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub name: String,
     /// Data type (e.g., INT, NVARCHAR(100))
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub data_type: String,
     /// Whether the column allows NULL
     #[serde(default)]
@@ -414,93 +501,93 @@ pub struct TableColumn {
     #[serde(default)]
     pub is_identity: bool,
     /// Default value if any
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_optional_string_or_array")]
     pub default_value: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DatabaseView {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub schema: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub name: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub description: String,
     #[serde(default)]
     pub referenced_tables: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub source_path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct StoredProcedure {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub schema: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub name: String,
     #[serde(default)]
     pub parameters: Vec<ProcedureParameter>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub description: String,
     #[serde(default)]
     pub referenced_tables: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub source_path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ProcedureParameter {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub name: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub data_type: String,
     #[serde(default)]
     pub is_optional: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub direction: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DatabaseFunction {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub schema: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub name: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub function_type: String,
     #[serde(default)]
     pub parameters: Vec<ProcedureParameter>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub return_type: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub description: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub source_path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct TableRelationship {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub from_table: String,
     #[serde(default)]
     pub from_columns: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub to_table: String,
     #[serde(default)]
     pub to_columns: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub relationship_type: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_optional_string_or_array")]
     pub constraint_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DataFlow {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub name: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub source: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub destination: String,
     #[serde(default)]
     pub operations: Vec<String>,
