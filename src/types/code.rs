@@ -22,8 +22,10 @@ pub struct CodeDossier {
     /// Importance score
     pub importance_score: f64,
     pub description: Option<String>,
+    #[serde(default)]
     pub functions: Vec<String>,
     /// Interfaces list
+    #[serde(default)]
     pub interfaces: Vec<String>,
 }
 
@@ -34,10 +36,13 @@ pub struct CodeInsight {
     pub code_dossier: CodeDossier,
     pub detailed_description: String,
     /// Responsibilities
+    #[serde(default)]
     pub responsibilities: Vec<String>,
     /// Contained interfaces
+    #[serde(default)]
     pub interfaces: Vec<InterfaceInfo>,
     /// Dependency information
+    #[serde(default)]
     pub dependencies: Vec<Dependency>,
     pub complexity_metrics: CodeComplexity,
 }
@@ -53,6 +58,10 @@ pub struct InterfaceInfo {
     pub parameters: Vec<ParameterInfo>,
     pub return_type: Option<String>,
     pub description: Option<String>,
+}
+
+fn default_dependency_type() -> String {
+    "import".to_string()
 }
 
 fn default_visibility() -> String {
@@ -73,8 +82,10 @@ pub struct ParameterInfo {
 pub struct Dependency {
     pub name: String,
     pub path: Option<String>,
+    #[serde(default)]
     pub is_external: bool,
     pub line_number: Option<usize>,
+    #[serde(default = "default_dependency_type")]
     pub dependency_type: String, // "import", "use", "include", "require", etc.
     pub version: Option<String>,
 }
