@@ -324,160 +324,187 @@ impl Default for BoundaryAnalysisReport {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DatabaseOverviewReport {
     /// Database projects found in the solution
+    #[serde(default)]
     pub database_projects: Vec<DatabaseProject>,
     /// All tables discovered across all database projects
+    #[serde(default)]
     pub tables: Vec<DatabaseTable>,
     /// All views discovered across all database projects
+    #[serde(default)]
     pub views: Vec<DatabaseView>,
     /// All stored procedures discovered across all database projects
+    #[serde(default)]
     pub stored_procedures: Vec<StoredProcedure>,
     /// All functions discovered across all database projects
+    #[serde(default)]
     pub database_functions: Vec<DatabaseFunction>,
     /// Table relationships (foreign keys, references)
+    #[serde(default)]
     pub table_relationships: Vec<TableRelationship>,
     /// Data flow patterns identified
+    #[serde(default)]
     pub data_flows: Vec<DataFlow>,
     /// Analysis confidence score (1-10)
+    #[serde(default)]
     pub confidence_score: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DatabaseProject {
     /// Project name (from .sqlproj)
+    #[serde(default)]
     pub name: String,
     /// Project file path
+    #[serde(default)]
     pub project_path: String,
     /// Target database platform (SQL Server, etc.)
+    #[serde(default)]
     pub target_platform: Option<String>,
     /// Number of tables
+    #[serde(default)]
     pub table_count: usize,
     /// Number of views
+    #[serde(default)]
     pub view_count: usize,
     /// Number of stored procedures
+    #[serde(default)]
     pub procedure_count: usize,
     /// Number of functions
+    #[serde(default)]
     pub function_count: usize,
     /// Referenced database projects or DACPACs
+    #[serde(default)]
     pub references: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DatabaseTable {
     /// Schema name (e.g., dbo)
+    #[serde(default)]
     pub schema: String,
     /// Table name
+    #[serde(default)]
     pub name: String,
     /// Column definitions
+    #[serde(default)]
     pub columns: Vec<TableColumn>,
     /// Primary key columns
+    #[serde(default)]
     pub primary_key: Vec<String>,
     /// Description/purpose of the table
+    #[serde(default)]
     pub description: String,
     /// Source file path
+    #[serde(default)]
     pub source_path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct TableColumn {
     /// Column name
+    #[serde(default)]
     pub name: String,
     /// Data type (e.g., INT, NVARCHAR(100))
+    #[serde(default)]
     pub data_type: String,
     /// Whether the column allows NULL
+    #[serde(default)]
     pub nullable: bool,
     /// Whether this is an identity/auto-increment column
+    #[serde(default)]
     pub is_identity: bool,
     /// Default value if any
+    #[serde(default)]
     pub default_value: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DatabaseView {
-    /// Schema name
+    #[serde(default)]
     pub schema: String,
-    /// View name
+    #[serde(default)]
     pub name: String,
-    /// Description of what the view does
+    #[serde(default)]
     pub description: String,
-    /// Tables referenced by this view
+    #[serde(default)]
     pub referenced_tables: Vec<String>,
-    /// Source file path
+    #[serde(default)]
     pub source_path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct StoredProcedure {
-    /// Schema name
+    #[serde(default)]
     pub schema: String,
-    /// Procedure name
+    #[serde(default)]
     pub name: String,
-    /// Parameters
+    #[serde(default)]
     pub parameters: Vec<ProcedureParameter>,
-    /// Description of what the procedure does
+    #[serde(default)]
     pub description: String,
-    /// Tables referenced (SELECT, INSERT, UPDATE, DELETE)
+    #[serde(default)]
     pub referenced_tables: Vec<String>,
-    /// Source file path
+    #[serde(default)]
     pub source_path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ProcedureParameter {
-    /// Parameter name (including @)
+    #[serde(default)]
     pub name: String,
-    /// Data type
+    #[serde(default)]
     pub data_type: String,
-    /// Whether it has a default value (is optional)
+    #[serde(default)]
     pub is_optional: bool,
-    /// Direction: INPUT, OUTPUT, INOUT
+    #[serde(default)]
     pub direction: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DatabaseFunction {
-    /// Schema name
+    #[serde(default)]
     pub schema: String,
-    /// Function name
+    #[serde(default)]
     pub name: String,
-    /// Function type: Scalar, Table-valued, etc.
+    #[serde(default)]
     pub function_type: String,
-    /// Parameters
+    #[serde(default)]
     pub parameters: Vec<ProcedureParameter>,
-    /// Return type
+    #[serde(default)]
     pub return_type: String,
-    /// Description
+    #[serde(default)]
     pub description: String,
-    /// Source file path
+    #[serde(default)]
     pub source_path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct TableRelationship {
-    /// Source table (schema.table)
+    #[serde(default)]
     pub from_table: String,
-    /// Source column(s)
+    #[serde(default)]
     pub from_columns: Vec<String>,
-    /// Target table (schema.table)
+    #[serde(default)]
     pub to_table: String,
-    /// Target column(s)
+    #[serde(default)]
     pub to_columns: Vec<String>,
-    /// Relationship type: ForeignKey, Reference, Implicit
+    #[serde(default)]
     pub relationship_type: String,
-    /// Constraint name if explicit FK
+    #[serde(default)]
     pub constraint_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DataFlow {
-    /// Flow name/description
+    #[serde(default)]
     pub name: String,
-    /// Source (table, external system, or procedure)
+    #[serde(default)]
     pub source: String,
-    /// Destination (table, external system, or procedure)
+    #[serde(default)]
     pub destination: String,
-    /// Operations involved (INSERT, UPDATE, MERGE, etc.)
+    #[serde(default)]
     pub operations: Vec<String>,
-    /// Procedures involved in this flow
+    #[serde(default)]
     pub procedures_involved: Vec<String>,
 }
 

@@ -9,6 +9,81 @@ use serde::{
     Deserialize, Deserializer, Serialize,
 };
 
+/// Deserializes a `String` that also accepts arrays or objects.
+/// Ollama models sometimes return `["a", "b"]` or `{name: "a"}` or `null`
+/// where a single `String` is expected. Arrays are joined with ", ".
+fn deserialize_string_or_array<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let val = serde_json::Value::deserialize(deserializer)?;
+    match val {
+        serde_json::Value::String(s) => Ok(s),
+        serde_json::Value::Array(arr) => {
+            let parts: Vec<String> = arr
+                .into_iter()
+                .filter_map(|v| match v {
+                    serde_json::Value::String(s) => Some(s),
+                    serde_json::Value::Object(map) => {
+                        map.get("name").and_then(|n| n.as_str()).map(String::from)
+                    }
+                    _ => Some(v.to_string()),
+                })
+                .collect();
+            Ok(parts.join(", "))
+        }
+        serde_json::Value::Object(map) => {
+            if let Some(name) = map.get("name").and_then(|n| n.as_str()) {
+                Ok(name.to_string())
+            } else {
+                Ok(serde_json::Value::Object(map).to_string())
+            }
+        }
+        serde_json::Value::Null => Ok(String::new()),
+        other => Ok(other.to_string()),
+    }
+}
+
+/// Deserializes an `Option<String>` that also accepts arrays or objects.
+fn deserialize_optional_string_or_array<'de, D>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let val = serde_json::Value::deserialize(deserializer)?;
+    match val {
+        serde_json::Value::Null => Ok(None),
+        serde_json::Value::String(s) if s.is_empty() => Ok(None),
+        serde_json::Value::Array(ref arr) if arr.is_empty() => Ok(None),
+        _ => {
+            let s = match val {
+                serde_json::Value::String(s) => s,
+                serde_json::Value::Array(arr) => {
+                    let parts: Vec<String> = arr
+                        .into_iter()
+                        .filter_map(|v| match v {
+                            serde_json::Value::String(s) => Some(s),
+                            serde_json::Value::Object(map) => {
+                                map.get("name").and_then(|n| n.as_str()).map(String::from)
+                            }
+                            _ => Some(v.to_string()),
+                        })
+                        .collect();
+                    parts.join(", ")
+                }
+                serde_json::Value::Object(map) => map
+                    .get("name")
+                    .and_then(|n| n.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                other => other.to_string(),
+            };
+            Ok(Some(s))
+        }
+    }
+}
+
 /// Deserializes a `Vec<String>` that also accepts objects with a `name` field.
 /// This handles Ollama models that return `[{name: "foo", interface_type: "fn"}]`
 /// where `Vec<String>` is expected.
@@ -52,6 +127,7 @@ where
 #[derive(Debug, Serialize, Deserialize, Clone, JsonSchema)]
 pub struct CodeDossier {
     /// Code file name
+    #[serde(deserialize_with = "deserialize_string_or_array")]
     pub name: String,
     /// File path
     pub file_path: PathBuf,
@@ -63,6 +139,7 @@ pub struct CodeDossier {
     pub code_purpose: CodePurpose,
     /// Importance score
     pub importance_score: f64,
+    #[serde(default, deserialize_with = "deserialize_optional_string_or_array")]
     pub description: Option<String>,
     #[serde(default, deserialize_with = "deserialize_strings_or_named")]
     pub functions: Vec<String>,
@@ -76,6 +153,7 @@ pub struct CodeDossier {
 pub struct CodeInsight {
     /// Code basic information
     pub code_dossier: CodeDossier,
+    #[serde(deserialize_with = "deserialize_string_or_array")]
     pub detailed_description: String,
     /// Responsibilities
     #[serde(default)]
@@ -92,13 +170,17 @@ pub struct CodeInsight {
 /// Interface information
 #[derive(Debug, Serialize, Deserialize, Clone, JsonSchema)]
 pub struct InterfaceInfo {
+    #[serde(deserialize_with = "deserialize_string_or_array")]
     pub name: String,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub interface_type: String, // "function", "method", "class", "trait", etc.
     #[serde(default = "default_visibility")]
     pub visibility: String,     // "public", "private", "protected"
     #[serde(default)]
     pub parameters: Vec<ParameterInfo>,
+    #[serde(default, deserialize_with = "deserialize_optional_string_or_array")]
     pub return_type: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_string_or_array")]
     pub description: Option<String>,
 }
 
@@ -113,22 +195,30 @@ fn default_visibility() -> String {
 /// Parameter information
 #[derive(Debug, Serialize, Deserialize, Clone, JsonSchema)]
 pub struct ParameterInfo {
+    #[serde(deserialize_with = "deserialize_string_or_array")]
     pub name: String,
+    #[serde(deserialize_with = "deserialize_string_or_array")]
     pub param_type: String,
+    #[serde(default)]
     pub is_optional: bool,
+    #[serde(default, deserialize_with = "deserialize_optional_string_or_array")]
     pub description: Option<String>,
 }
 
 /// Dependency information
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Dependency {
+    #[serde(deserialize_with = "deserialize_string_or_array")]
     pub name: String,
+    #[serde(default, deserialize_with = "deserialize_optional_string_or_array")]
     pub path: Option<String>,
     #[serde(default)]
     pub is_external: bool,
+    #[serde(default)]
     pub line_number: Option<usize>,
     #[serde(default = "default_dependency_type")]
     pub dependency_type: String, // "import", "use", "include", "require", etc.
+    #[serde(default, deserialize_with = "deserialize_optional_string_or_array")]
     pub version: Option<String>,
 }
 
