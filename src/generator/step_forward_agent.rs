@@ -304,6 +304,7 @@ impl DataFormatter {
             DependencyType::Composition => 7,
             DependencyType::DataFlow => 6,
             DependencyType::Module => 5,
+            DependencyType::Other => 3,
         }
     }
 
