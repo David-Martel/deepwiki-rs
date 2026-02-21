@@ -6,6 +6,7 @@ use rig::{
     client::CompletionClient,
     completion::{Prompt, PromptError},
     extractor::Extractor,
+    message::ToolChoice,
     providers::gemini::completion::gemini_api_types::{AdditionalParameters, GenerationConfig},
 };
 use schemars::JsonSchema;
@@ -226,6 +227,7 @@ impl ProviderClient {
                     .tool(file_explorer.clone())
                     .tool(file_reader.clone())
                     .tool(tool_time)
+                    .tool_choice(ToolChoice::Required)
                     .build();
                 ProviderAgent::OpenAI(agent)
             }
@@ -243,6 +245,7 @@ impl ProviderClient {
                     .tool(file_explorer.clone())
                     .tool(file_reader.clone())
                     .tool(tool_time)
+                    .tool_choice(ToolChoice::Required)
                     .build();
                 ProviderAgent::Moonshot(agent)
             }
@@ -260,6 +263,7 @@ impl ProviderClient {
                     .tool(file_explorer.clone())
                     .tool(file_reader.clone())
                     .tool(tool_time)
+                    .tool_choice(ToolChoice::Required)
                     .build();
                 ProviderAgent::DeepSeek(agent)
             }
@@ -276,6 +280,7 @@ impl ProviderClient {
                     .tool(file_explorer.clone())
                     .tool(file_reader.clone())
                     .tool(tool_time)
+                    .tool_choice(ToolChoice::Required)
                     .build();
                 ProviderAgent::Mistral(agent)
             }
@@ -292,6 +297,7 @@ impl ProviderClient {
                     .tool(file_explorer.clone())
                     .tool(file_reader.clone())
                     .tool(tool_time)
+                    .tool_choice(ToolChoice::Required)
                     .build();
                 ProviderAgent::OpenRouter(agent)
             }
@@ -309,6 +315,7 @@ impl ProviderClient {
                     .tool(file_explorer.clone())
                     .tool(file_reader.clone())
                     .tool(tool_time)
+                    .tool_choice(ToolChoice::Required)
                     .build();
                 ProviderAgent::Anthropic(agent)
             }
@@ -329,6 +336,7 @@ impl ProviderClient {
                     .tool(file_explorer.clone())
                     .tool(file_reader.clone())
                     .tool(tool_time)
+                    .tool_choice(ToolChoice::Required)
                     .additional_params(serde_json::to_value(cfg).unwrap())
                     .build();
                 ProviderAgent::Gemini(agent)
@@ -347,6 +355,7 @@ impl ProviderClient {
                     .tool(file_explorer.clone())
                     .tool(file_reader.clone())
                     .tool(tool_time)
+                    .tool_choice(ToolChoice::Required)
                     .build();
                 ProviderAgent::Ollama(agent)
             }
