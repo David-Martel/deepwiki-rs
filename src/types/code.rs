@@ -4,7 +4,49 @@ use std::{
 };
 
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::{
+    de::{SeqAccess, Visitor},
+    Deserialize, Deserializer, Serialize,
+};
+
+/// Deserializes a `Vec<String>` that also accepts objects with a `name` field.
+/// This handles Ollama models that return `[{name: "foo", interface_type: "fn"}]`
+/// where `Vec<String>` is expected.
+fn deserialize_strings_or_named<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct StringsOrNamedVisitor;
+
+    impl<'de> Visitor<'de> for StringsOrNamedVisitor {
+        type Value = Vec<String>;
+
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("a sequence of strings or objects with a 'name' field")
+        }
+
+        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: SeqAccess<'de>,
+        {
+            let mut out = Vec::new();
+            while let Some(val) = seq.next_element::<serde_json::Value>()? {
+                match val {
+                    serde_json::Value::String(s) => out.push(s),
+                    serde_json::Value::Object(map) => {
+                        if let Some(name) = map.get("name").and_then(|n| n.as_str()) {
+                            out.push(name.to_string());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Ok(out)
+        }
+    }
+
+    deserializer.deserialize_seq(StringsOrNamedVisitor)
+}
 
 /// Code basic information
 #[derive(Debug, Serialize, Deserialize, Clone, JsonSchema)]
@@ -22,10 +64,10 @@ pub struct CodeDossier {
     /// Importance score
     pub importance_score: f64,
     pub description: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_strings_or_named")]
     pub functions: Vec<String>,
     /// Interfaces list
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_strings_or_named")]
     pub interfaces: Vec<String>,
 }
 
