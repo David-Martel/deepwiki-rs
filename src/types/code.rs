@@ -248,7 +248,7 @@ pub struct CodeComplexity {
 }
 
 /// Code functionality classification enum
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, JsonSchema)]
+#[derive(Debug, Serialize, Clone, PartialEq, Eq, Hash, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum CodePurpose {
     /// Project execution entry
@@ -329,6 +329,147 @@ pub enum CodePurpose {
 }
 
 impl CodePurpose {
+    /// Parse loosely formatted LLM output into a known enum variant.
+    pub fn from_loose_label(value: &str) -> Self {
+        let raw = value.trim();
+        if raw.is_empty() {
+            return CodePurpose::Other;
+        }
+        let normalized = raw
+            .to_lowercase()
+            .replace(['–', '—', '-'], " ")
+            .replace('_', " ");
+
+        let compact: String = normalized.chars().filter(|c| !c.is_whitespace()).collect();
+        let has = |needle: &str| normalized.contains(needle);
+        let has_compact = |needle: &str| compact.contains(needle);
+
+        if has("project execution entry")
+            || has_compact("entry")
+            || (has("main") && has("entry"))
+        {
+            return CodePurpose::Entry;
+        }
+        if has("intelligent agent") || has("agent") {
+            return CodePurpose::Agent;
+        }
+        if has("frontend ui page") || has("ui page") || has("page") {
+            return CodePurpose::Page;
+        }
+        if has("frontend ui component")
+            || has("ui component")
+            || (has("component") && (has("ui") || has("frontend") || has("widget")))
+            || has("widget")
+        {
+            return CodePurpose::Widget;
+        }
+        if has("specific feature")
+            || has("specificfeature")
+            || has("logical functionality")
+            || has("feature")
+        {
+            return CodePurpose::SpecificFeature;
+        }
+        if has("data type")
+            || has("model")
+            || has("schema")
+            || has("entity")
+        {
+            return CodePurpose::Model;
+        }
+        if has("interface definition")
+            || has("types")
+            || has("type definition")
+        {
+            return CodePurpose::Types;
+        }
+        if has("tool") || has("utility tool") {
+            return CodePurpose::Tool;
+        }
+        if has("utility")
+            || has("helper")
+            || has("low-level auxiliary")
+        {
+            return CodePurpose::Util;
+        }
+        if has("configuration") || has("config") || has("settings") {
+            return CodePurpose::Config;
+        }
+        if has("middleware") {
+            return CodePurpose::Middleware;
+        }
+        if has("plugin") {
+            return CodePurpose::Plugin;
+        }
+        if has("router") || has("routing") {
+            return CodePurpose::Router;
+        }
+        if has("database")
+            || has("sql")
+            || has("storage")
+            || has("repository")
+        {
+            return CodePurpose::Database;
+        }
+        if has("api")
+            || has("http")
+            || has("rpc")
+            || has("endpoint")
+            || has("service api")
+        {
+            return CodePurpose::Api;
+        }
+        if has("controller") {
+            return CodePurpose::Controller;
+        }
+        if has("service")
+            && !has("service api")
+            && !has("api service")
+        {
+            return CodePurpose::Service;
+        }
+        if has("module") {
+            return CodePurpose::Module;
+        }
+        if has("dependency library")
+            || has("library")
+            || has("third party")
+            || has("package")
+        {
+            return CodePurpose::Lib;
+        }
+        if has("test") || has("spec") {
+            return CodePurpose::Test;
+        }
+        if has("documentation") || has("doc") || has("readme") {
+            return CodePurpose::Doc;
+        }
+        if has("data access layer")
+            || has("dao")
+            || has("repository")
+            || has("persistence")
+        {
+            return CodePurpose::Dao;
+        }
+        if has("context") {
+            return CodePurpose::Context;
+        }
+        if has("command line")
+            || has("cli")
+            || has("handler")
+            || has("command")
+        {
+            return CodePurpose::Command;
+        }
+        if has("other")
+            || has("unknown")
+            || has("misc")
+        {
+            return CodePurpose::Other;
+        }
+        CodePurpose::Other
+    }
+
     /// Get component type display name
     pub fn display_name(&self) -> &'static str {
         match self {
@@ -370,6 +511,33 @@ impl Display for CodePurpose {
 impl Default for CodePurpose {
     fn default() -> Self {
         CodePurpose::Other
+    }
+}
+
+impl<'de> Deserialize<'de> for CodePurpose {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let val = serde_json::Value::deserialize(deserializer)?;
+        let candidate = match val {
+            serde_json::Value::String(s) => s,
+            serde_json::Value::Object(map) => map
+                .get("code_purpose")
+                .and_then(|v| v.as_str())
+                .or_else(|| map.get("purpose").and_then(|v| v.as_str()))
+                .or_else(|| map.get("type").and_then(|v| v.as_str()))
+                .or_else(|| map.get("name").and_then(|v| v.as_str()))
+                .unwrap_or("other")
+                .to_string(),
+            serde_json::Value::Array(items) => items
+                .iter()
+                .find_map(|item| item.as_str())
+                .unwrap_or("other")
+                .to_string(),
+            _ => "other".to_string(),
+        };
+        Ok(CodePurpose::from_loose_label(&candidate))
     }
 }
 

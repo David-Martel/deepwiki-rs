@@ -1,12 +1,16 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::fs;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use chrono::{DateTime, Utc};
+use futures::future::join_all;
+use tokio::sync::Semaphore;
 
 use crate::config::{Config, LocalDocsConfig};
 use crate::integrations::local_docs::{LocalDocsProcessor, LocalDocMetadata};
+use std::time::Instant;
 
 /// Metadata about synced knowledge
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,7 +71,9 @@ impl KnowledgeSyncer {
                     .join("local_docs")
             });
 
-        fs::create_dir_all(&cache_dir).context("Failed to create local docs cache directory")?;
+        tokio::fs::create_dir_all(&cache_dir)
+            .await
+            .context("Failed to create local docs cache directory")?;
 
         let mut all_docs = Vec::new();
         let mut categories_map: HashMap<String, Vec<LocalDocMetadata>> = HashMap::new();
@@ -77,23 +83,56 @@ impl KnowledgeSyncer {
         // Get default chunking config
         let default_chunking = config.default_chunking.clone();
         let project_root = self.config.project_path.as_path();
+        let parallelism = self.config.llm.max_parallels.max(1);
 
         // Process categorized documents
         for category in &config.categories {
+            let category_started = Instant::now();
             println!("\n  📁 Processing category: {} ({})", category.name, category.description);
             
             let files = LocalDocsProcessor::expand_glob_patterns(&category.paths, Some(project_root));
             
             // Determine chunking config for this category
-            let chunking_config = category.chunking.as_ref().or(default_chunking.as_ref());
-            
-            for file_path in files {
-                match LocalDocsProcessor::process_file_with_chunking(
-                    &file_path,
-                    &category.name,
-                    &category.target_agents,
-                    chunking_config,
-                ) {
+            let chunking_config = category.chunking.clone().or(default_chunking.clone());
+            let semaphore = Arc::new(Semaphore::new(parallelism));
+            let category_name = category.name.clone();
+            let target_agents = category.target_agents.clone();
+
+            let tasks = files.into_iter().map(|file_path| {
+                let semaphore = Arc::clone(&semaphore);
+                let category_name = category_name.clone();
+                let target_agents = target_agents.clone();
+                let chunking_config = chunking_config.clone();
+                let file_path_for_worker = file_path.clone();
+                async move {
+                    let _permit = match semaphore.acquire_owned().await {
+                        Ok(permit) => permit,
+                        Err(e) => {
+                            return (
+                                file_path,
+                                Err(anyhow!("failed to acquire local-doc semaphore permit: {}", e)),
+                            );
+                        }
+                    };
+
+                    let result = tokio::task::spawn_blocking(move || {
+                        LocalDocsProcessor::process_file_with_chunking(
+                            &file_path_for_worker,
+                            &category_name,
+                            &target_agents,
+                            chunking_config.as_ref(),
+                        )
+                    })
+                    .await
+                    .map_err(|e| anyhow!("local-doc worker join error: {}", e))
+                    .and_then(|inner| inner);
+
+                    (file_path, result)
+                }
+            });
+
+            for (file_path, result) in join_all(tasks).await {
+                match result {
                     Ok(doc_metas) => {
                         let is_chunked = doc_metas.len() > 1;
                         if is_chunked {
@@ -121,6 +160,12 @@ impl KnowledgeSyncer {
                     }
                 }
             }
+
+            println!(
+                "  ⏱️  Category '{}' processed in {:.2}s",
+                category.name,
+                category_started.elapsed().as_secs_f64()
+            );
         }
 
         // Save metadata
@@ -133,7 +178,9 @@ impl KnowledgeSyncer {
         let metadata_file = cache_dir.join("_metadata.json");
         let metadata_json =
             serde_json::to_string_pretty(&metadata).context("Failed to serialize metadata")?;
-        fs::write(&metadata_file, metadata_json).context("Failed to write metadata")?;
+        tokio::fs::write(&metadata_file, metadata_json)
+            .await
+            .context("Failed to write metadata")?;
 
         if chunked_count > 0 {
             println!("✅ Processed {} files ({} chunked into multiple parts)", processed_count, chunked_count);

@@ -55,6 +55,18 @@ impl DocumentChunker {
     pub fn new(config: ChunkingConfig) -> Self {
         Self { config }
     }
+
+    /// Return the tail slice of `input` using a byte offset corrected to a UTF-8 char boundary.
+    fn utf8_tail_from(input: &str, requested_start: usize) -> String {
+        if requested_start >= input.len() {
+            return String::new();
+        }
+        let mut start = requested_start;
+        while start < input.len() && !input.is_char_boundary(start) {
+            start += 1;
+        }
+        input[start..].to_string()
+    }
     
     /// Check if content needs chunking based on size
     pub fn needs_chunking(&self, content: &str) -> bool {
@@ -159,7 +171,7 @@ impl DocumentChunker {
                 });
                 // Keep overlap
                 let overlap_start = current_chunk.len().saturating_sub(self.config.chunk_overlap);
-                current_chunk = current_chunk[overlap_start..].to_string();
+                current_chunk = Self::utf8_tail_from(&current_chunk, overlap_start);
             }
         }
         
@@ -277,7 +289,7 @@ impl DocumentChunker {
                 });
                 // Keep overlap from end of previous chunk
                 let overlap_start = current_chunk.len().saturating_sub(self.config.chunk_overlap);
-                current_chunk = current_chunk[overlap_start..].to_string();
+                current_chunk = Self::utf8_tail_from(&current_chunk, overlap_start);
             }
             
             if !current_chunk.is_empty() {

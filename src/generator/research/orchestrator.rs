@@ -26,12 +26,12 @@ impl ResearchOrchestrator {
             .await?;
 
         // Second layer: Meso analysis (C2)
-        self.execute_agent(&DomainModulesDetector, context)
-            .await?;
-        self.execute_agent(&ArchitectureResearcher, context)
-            .await?;
-        self.execute_agent(&WorkflowResearcher, context)
-            .await?;
+        // These agents consume preprocess artifacts and can run concurrently.
+        tokio::try_join!(
+            self.execute_agent(&DomainModulesDetector, context),
+            self.execute_agent(&ArchitectureResearcher, context),
+            self.execute_agent(&WorkflowResearcher, context)
+        )?;
 
         // Third layer: Micro analysis (C3-C4)
         self.execute_agent(&KeyModulesInsight, context)

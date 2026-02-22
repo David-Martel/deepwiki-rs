@@ -76,7 +76,7 @@ impl CacheManager {
         let hash = self.hash_prompt(prompt);
         let cache_path = self.get_cache_path(category, &hash);
 
-        if !cache_path.exists() {
+        if !fs::try_exists(&cache_path).await.unwrap_or(false) {
             self.performance_monitor.record_cache_miss(category);
             return Ok(None);
         }

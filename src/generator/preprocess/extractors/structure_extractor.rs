@@ -8,6 +8,7 @@ use crate::utils::file_utils::{is_binary_file_path, is_test_directory, is_test_f
 use crate::utils::sources::read_code_source;
 use anyhow::Result;
 use futures::future::BoxFuture;
+use futures::stream::{self, StreamExt};
 use std::collections::HashMap;
 use std::fs::Metadata;
 use std::path::PathBuf;
@@ -110,7 +111,7 @@ impl StructureExtractor {
                 if file_type.is_file() {
                     // Check if this file should be ignored
                     if !self.should_ignore_file(&path) {
-                        if let Ok(metadata) = std::fs::metadata(&path) {
+                        if let Ok(metadata) = tokio::fs::metadata(&path).await {
                             let file_info = self.create_file_info(&path, root_path, &metadata)?;
 
                             // Update statistics
@@ -418,8 +419,6 @@ impl StructureExtractor {
         &self,
         structure: &ProjectStructure,
     ) -> Result<Vec<CodeDossier>> {
-        let mut core_codes = Vec::new();
-
         // Filter core files based on importance score
         let mut core_files: Vec<_> = structure.files.iter().filter(|f| f.is_core).collect();
 
@@ -430,35 +429,56 @@ impl StructureExtractor {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
-        for file in core_files {
-            let code_purpose = self.determine_code_purpose(file).await;
+        let max_parallel = self.context.config.llm.max_parallels.max(1);
+        let indexed_results = stream::iter(core_files.into_iter().enumerate().map(|(idx, file)| {
+            let file = file.clone();
+            async move {
+                let code_purpose = self.determine_code_purpose(&file).await;
 
-            // Extract interface information
-            let interfaces = self.extract_file_interfaces(file).await.unwrap_or_default();
-            let interface_names: Vec<String> = interfaces.iter().map(|i| i.name.clone()).collect();
+                // Extract interface information
+                let interfaces = self.extract_file_interfaces(&file).await.unwrap_or_default();
+                let interface_names: Vec<String> = interfaces.iter().map(|i| i.name.clone()).collect();
 
-            // Extract core code summary
-            let source_summary =
-                read_code_source(&self.language_processor, &structure.root_path, &file.path, &self.context.config.target_language);
+                // Extract core code summary
+                let source_summary = read_code_source(
+                    &self.language_processor,
+                    &structure.root_path,
+                    &file.path,
+                    &self.context.config.target_language,
+                );
 
-            core_codes.push(CodeDossier {
-                name: file.name.clone(),
-                file_path: file.path.clone(),
-                source_summary,
-                code_purpose,
-                importance_score: file.importance_score,
-                description: None,           // Filled later through LLM analysis
-                functions: Vec::new(),       // Filled later through code analysis
-                interfaces: interface_names, // Interface names extracted from code analysis
-            });
-        }
+                (
+                    idx,
+                    CodeDossier {
+                        name: file.name.clone(),
+                        file_path: file.path.clone(),
+                        source_summary,
+                        code_purpose,
+                        importance_score: file.importance_score,
+                        description: None,     // Filled later through LLM analysis
+                        functions: Vec::new(), // Filled later through code analysis
+                        interfaces: interface_names, // Interface names extracted from code analysis
+                    },
+                )
+            }
+        }))
+        .buffer_unordered(max_parallel)
+        .collect::<Vec<_>>()
+        .await;
+
+        let mut indexed_results = indexed_results;
+        indexed_results.sort_by_key(|(idx, _)| *idx);
+        let core_codes: Vec<CodeDossier> = indexed_results
+            .into_iter()
+            .map(|(_, dossier)| dossier)
+            .collect();
 
         Ok(core_codes)
     }
 
     async fn determine_code_purpose(&self, file: &FileInfo) -> CodePurpose {
         // Read file content
-        let file_content = std::fs::read_to_string(&file.path).ok();
+        let file_content = tokio::fs::read_to_string(&file.path).await.ok();
 
         // Use enhanced component type analyzer
         match self
